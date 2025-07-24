@@ -39,50 +39,48 @@ def set_options(drawer):
 	})
 	#opts.addStereoAnnotation = True
 
-class SmileRenderer(object):
+def get_molecule(data=None, h=False):
+	mol = Chem.MolFromSmiles(data)
+	mol = Chem.Mol(mol)
 
+	Chem.rdDepictor.SetPreferCoordGen(False)
+	if h:
+		mol = Chem.AddHs(mol)
+
+	if not mol.GetNumConformers():
+		Chem.rdDepictor.Compute2DCoords(mol, useRingTemplates=True)
+
+	Chem.rdDepictor.StraightenDepiction(mol)
+	#Chem.rdMolTransforms.CanonicalizeMol(mol)
+	#Chem.rdDepictor.NormalizeDepiction(mol, -1, 0)
+
+	#Draw.MolsToGridImage([mol, moltmp])
+	return mol
+
+class SmileRenderer(object):
 
 	@cherrypy.expose
 	def svg(self, data=None, h=False, size=(-1,-1)):
-		mol = Chem.MolFromSmiles(data)
-		if h:
-			mol = Chem.AddHs(mol)
-		if not mol.GetNumConformers():
-			Chem.rdDepictor.Compute2DCoords(mol)
-		#Chem.rdMolTransforms.CanonicalizeMol(mol)
-		Chem.rdDepictor.StraightenDepiction(mol)
-		#Chem.rdDepictor.NormalizeDepiction(mol, -1, 0)
+		mol = get_molecule(data, h)
+
 		drawer = rdMolDraw2D.MolDraw2DSVG(*size)
 		set_options(drawer)
-
 		drawer.DrawMolecule(mol)
 		drawer.FinishDrawing()
 		svg = drawer.GetDrawingText()
+
 		cherrypy.response.headers['Content-Type'] = "image/svg+xml"
 		return svg.encode('utf8')
 
 	@cherrypy.expose
 	def png(self, data=None, h=False, size=(300,300)):
-		mol = Chem.MolFromSmiles(data)
-		if h:
-			mol = Chem.AddHs(mol)
-		if not mol.GetNumConformers():
-			Chem.rdDepictor.Compute2DCoords(mol)
+		mol = get_molecule(data, h)
 
 		drawer = rdMolDraw2D.MolDraw2DCairo(*size)
 		set_options(drawer)
 		drawer.DrawMolecule(mol)
 		drawer.FinishDrawing()
 		png = drawer.GetDrawingText()
-		#img = Draw.MolToImage(mol)
-		#img = PIL.ImageOps.invert(img)
-		#img = img.convert('HSV')
-		#hsv = np.array(img)
-		#hsv[...,0] = (hsv[...,0]+127) % 255
-		#hsv[...,1] = (hsv[...,1]*0.5)
-		#hsv[...,2] = np.clip(hsv[...,2], 24, 255)
-		#img = Image.fromarray(hsv, 'HSV')
-		#img = img.convert('RGB')
 
 		buffer = io.BytesIO()
 		buffer.write(png)
