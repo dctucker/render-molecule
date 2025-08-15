@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from config import Config
 import cherrypy
 import simplejson
 import json
@@ -21,26 +22,15 @@ import tempfile
 def set_options(drawer):
 	opts = drawer.drawOptions()
 	opts.additionalAtomLabelPadding = 0.125
-	opts.setBackgroundColour((0.06274509804, 0.07450980392, 0.09411764706))
-	opts.setAtomPalette({
-		-1 : (0.8, 0.8, 0.8),
-		0  : (0.9, 0.9, 0.9),
-		1  : (0.625, 0.625, 0.625),
-		6  : (0.9, 0.9, 0.9),
-		7  : (0.5, 0.6, 1.0),
-		8  : (1.0, 0.3, 0.3),
-		9  : (0.1, 0.9, 0.9),
-		15 : (1.0, 0.5, 0.0),
-		16 : (1.0, 0.8, 0.3),
-		17 : (0.0, 0.802, 0.0),
-		35 : (0.71, 0.4, 0.07),
-		53 : (0.89, 0.004, 1),
-		201: (0.68, 0.85, 0.90),
-	})
+	opts.setBackgroundColour(config.getcolor('bg'))
+	opts.setAtomPalette({n: config.getcolor(n) for n in [-1, 0, 1, 6, 7, 8, 9, 15, 16, 17, 35, 53, 201]})
 	#opts.addStereoAnnotation = True
 
 def get_molecule(data=None, h=False):
 	mol = Chem.MolFromSmiles(data)
+	if mol is None:
+		raise cherrypy.HTTPError(status=400, message='Syntax error')
+
 	mol = Chem.Mol(mol)
 
 	Chem.rdDepictor.SetPreferCoordGen(False)
@@ -60,7 +50,10 @@ def get_molecule(data=None, h=False):
 class SmileRenderer(object):
 
 	@cherrypy.expose
-	def svg(self, data=None, h=False, size=(-1,-1)):
+	def svg(self, data=None, h=False, size=None):
+		if size is None:
+			size = (-1, -1)
+
 		mol = get_molecule(data, h)
 
 		drawer = rdMolDraw2D.MolDraw2DSVG(*size)
@@ -69,11 +62,16 @@ class SmileRenderer(object):
 		drawer.FinishDrawing()
 		svg = drawer.GetDrawingText()
 
-		cherrypy.response.headers['Content-Type'] = "image/svg+xml"
+		cherrypy.response.headers['Content-Type'] = 'image/svg+xml'
 		return svg.encode('utf8')
 
 	@cherrypy.expose
-	def png(self, data=None, h=False, size=(300,300)):
+	def png(self, data=None, h=False, size=None):
+		default_size = config.getsize('default')
+		max_size = config.getsize('max')
+		if size is None or size[0] > max_size[0] or size[1] > max_size[1]:
+			size = default_size
+
 		mol = get_molecule(data, h)
 
 		drawer = rdMolDraw2D.MolDraw2DCairo(*size)
@@ -86,32 +84,33 @@ class SmileRenderer(object):
 		buffer.write(png)
 		buffer.seek(0)
 		png = buffer.read()
-		cherrypy.response.headers['Content-Type'] = "image/png"
+		cherrypy.response.headers['Content-Type'] = 'image/png'
 		return png
 
 	@cherrypy.expose
 	def render(self, name=None, format=None, h=None, size=None):
-		if h is None or len(h) == 0 or h == "0" or h == "False" or h == "false":
+		if h is None or len(h) == 0 or h == '0' or h == 'False' or h == 'false':
 			h = False
 		else:
 			h = True
 
-		if size is None or size == "":
-			size = (-1,-1)
+		if size is not None and len(size) > 0:
+			size = tuple(int(w) for w in size.split('x'))
 		else:
-			size = (int(w) for w in size.split("x"))
+			size = None
 
+		data = name
 		if format is None:
-			data, input_format = name.split(".")
+			output_format = config.get('server', 'format')
 		else:
-			data = name
-			input_format = format.strip('.')
+			output_format = format.strip('.')
 
-		if input_format == "png":
-			if size[0] > 1000 or size[1] > 1000:
-				size = (300,300)
+		if output_format not in ('svg', 'png'):
+			raise cherrypy.HTTPError(status=400, message='Unknown output format')
+
+		if output_format == 'png':
 			return self.png(data, h, size)
-		elif input_format == "svg":
+		elif output_format == 'svg':
 			return self.svg(data, h, size)
 
 	@cherrypy.expose
@@ -119,15 +118,20 @@ class SmileRenderer(object):
 		return "Render Molecule API\n"
 
 if __name__ == '__main__':
+	global config
+	config = Config()
+	debug = config.getboolean('server', 'debug')
 	conf = {
 			'/': {
 				#'request.dispatch': cherrypy.dispatch.MethodDispatcher(),
 				#'tools.sessions.on': True,
 				#'tools.response_headers.on': True,
-				#'tools.response_headers.headers': [('Content-Type','application/json')],
+				#'tools.response_headers.headers': [('Content-Type', 'application/json')],
+				'request.show_tracebacks': debug,
 			}
 		}
 	cherrypy.config.update({
-		"server.socket_port": 8555,
+		'server.socket_host': config.get('server', 'host'),
+		'server.socket_port': config.getint('server', 'port'),
 	})
-	cherrypy.quickstart( SmileRenderer(), '/', conf )
+	cherrypy.quickstart( SmileRenderer(), config.get('server', 'path'), conf )

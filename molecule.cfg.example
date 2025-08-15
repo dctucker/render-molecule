@@ -1,0 +1,26 @@
+[server]
+host = 127.0.0.1
+port = 8555
+format = svg
+path = /
+
+[size]
+default = 300x300
+max = 1000x1000
+
+[colors]
+bg = #101218
+fg = #cccccc
+0 = #e6e6e6
+1 = #999999
+6 = #e6e6e6
+7 = #7f99ff
+8 = #ff4e4e
+9 = #1ae6e6
+15 = #ff7f00
+16 = #ffcc4d
+17 = #00cd00
+35 = #b66612
+53 = #e301ff
+201 = #aed9e5
+
